@@ -121,7 +121,7 @@ def update_lib() -> None:
             )
             return
 
-    print(f"Installing Go library {PINNED_GO_VERSION} from QubitLabsAU/tls-client...")
+    print(f"Installing Go library {PINNED_GO_VERSION}")
 
     session = requests.Session()
     os.makedirs(DOWNLOAD_DIR, exist_ok=True)
