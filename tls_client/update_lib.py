@@ -10,7 +10,7 @@ from .utils import get_dependency_filename
 
 # Axen Go fork (bogdanfinn main + chrome_150). Not bogdanfinn release assets.
 PINNED_GO_VERSION = "latest"
-GITHUB_TAG_API_URL = "https://api.github.com/repos/Aifert/tls-client/releases/tags/{tag}"
+GITHUB_TAG_API_URL = "https://api.github.com/repos/QubitLabsAU/tls-client/releases/tags/{tag}"
 
 LOCAL_VERSION_FILE = os.path.join(os.path.dirname(__file__), "dependencies/version.txt")
 DOWNLOAD_DIR = os.path.dirname(LOCAL_VERSION_FILE)
@@ -121,7 +121,7 @@ def update_lib() -> None:
             )
             return
 
-    print(f"Installing Go library {PINNED_GO_VERSION} from Aifert/tls-client...")
+    print(f"Installing Go library {PINNED_GO_VERSION}")
 
     session = requests.Session()
     os.makedirs(DOWNLOAD_DIR, exist_ok=True)
