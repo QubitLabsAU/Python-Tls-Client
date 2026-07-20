@@ -8,11 +8,10 @@ import requests
 
 from .utils import get_dependency_filename
 
-# ── Pin the Go shared library to a known-good version ──────────────────
-# Change this value and commit to upgrade. Never auto-fetches "latest".
-PINNED_GO_VERSION = "v1.14.0"
+# Axen Go fork (bogdanfinn main + chrome_150). Not bogdanfinn release assets.
+PINNED_GO_VERSION = "latest"
+GITHUB_TAG_API_URL = "https://api.github.com/repos/Aifert/tls-client/releases/tags/{tag}"
 
-GITHUB_TAG_API_URL = "https://api.github.com/repos/bogdanfinn/tls-client/releases/tags/{tag}"
 LOCAL_VERSION_FILE = os.path.join(os.path.dirname(__file__), "dependencies/version.txt")
 DOWNLOAD_DIR = os.path.dirname(LOCAL_VERSION_FILE)
 CHECK_INTERVAL = timedelta(hours=24)
@@ -20,9 +19,17 @@ CHECK_INTERVAL = timedelta(hours=24)
 CURRENT_DEPENDENCY_FILENAME = get_dependency_filename()
 
 
+def _auth_headers() -> dict:
+    headers = {"Accept": "application/octet-stream"}
+    github_token = os.getenv("GITHUB_TOKEN") or os.getenv("GH_TOKEN")
+    if github_token:
+        headers["Authorization"] = f"Bearer {github_token}"
+    return headers
+
+
 def _get_release_by_tag(session: requests.Session, tag: str) -> tuple[Any, str | None]:
     headers = {}
-    github_token = os.getenv("GITHUB_TOKEN")
+    github_token = os.getenv("GITHUB_TOKEN") or os.getenv("GH_TOKEN")
     if github_token:
         headers["Authorization"] = f"Bearer {github_token}"
 
@@ -52,13 +59,20 @@ def save_local_version(version: str, last_modified: str) -> None:
 
 
 def _download_file(session: requests.Session, url: str, dest_path: str) -> None:
-    response = session.get(url)
+    # Private release assets need auth; follow redirects to S3/etc.
+    response = session.get(url, headers=_auth_headers(), allow_redirects=True)
     response.raise_for_status()
     with open(dest_path, "wb") as f:
         f.write(response.content)
 
 
 def _should_check_update() -> bool:
+    # ponytail: if the platform lib already exists, skip network unless forced.
+    lib_path = os.path.join(DOWNLOAD_DIR, CURRENT_DEPENDENCY_FILENAME or "")
+    if CURRENT_DEPENDENCY_FILENAME and os.path.isfile(lib_path):
+        if os.getenv("AXEN_TLS_FORCE_UPDATE") != "1":
+            return False
+
     local_version_info = read_local_version()
     if not local_version_info or "last_check" not in local_version_info:
         return True
@@ -76,7 +90,8 @@ def _download_release(
     dependency = CURRENT_DEPENDENCY_FILENAME.rsplit(".", 1)[0]
     for asset in assets:
         if asset["name"].startswith(dependency):
-            download_url = asset["browser_download_url"]
+            # API asset URL works for private repos with token
+            download_url = asset.get("url") or asset["browser_download_url"]
             dest_path = os.path.join(DOWNLOAD_DIR, CURRENT_DEPENDENCY_FILENAME)
             _download_file(session, download_url, dest_path)
             print(f"Downloaded {CURRENT_DEPENDENCY_FILENAME} " f"from {download_url}")
@@ -90,18 +105,23 @@ def _download_release(
 
 
 def update_lib() -> None:
+    if not CURRENT_DEPENDENCY_FILENAME:
+        return
+
     if not _should_check_update():
         return
 
     local_version_info = read_local_version()
     if local_version_info and local_version_info["version"] == PINNED_GO_VERSION:
-        save_local_version(
-            PINNED_GO_VERSION,
-            local_version_info.get("last_modified", ""),
-        )
-        return
+        lib_path = os.path.join(DOWNLOAD_DIR, CURRENT_DEPENDENCY_FILENAME)
+        if os.path.isfile(lib_path):
+            save_local_version(
+                PINNED_GO_VERSION,
+                local_version_info.get("last_modified", ""),
+            )
+            return
 
-    print(f"Installing Go library {PINNED_GO_VERSION}...")
+    print(f"Installing Go library {PINNED_GO_VERSION} from Aifert/tls-client...")
 
     session = requests.Session()
     os.makedirs(DOWNLOAD_DIR, exist_ok=True)
